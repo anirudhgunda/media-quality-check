@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.swp
+
+# Packaging
+build/
+dist/
+*.egg-info/
+
+# Virtual envs
+.publish-venv/
+.venv/
+

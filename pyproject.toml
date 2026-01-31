@@ -1,0 +1,30 @@
+[project]
+name = "media-quality-check"
+version = "1.0.2"
+description = "Advanced media quality analyzer using ffprobe"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+  { name = "Anirudh" }
+]
+
+keywords = ["ffprobe", "media", "video", "audio", "quality"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Development Status :: 5 - Production/Stable",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Multimedia :: Sound/Audio"
+]
+
+[project.urls]
+Homepage = "https://github.com/anirudhgunda/media-quality-check"
+Repository = "https://github.com/anirudhgunda/media-quality-check"
+BugTracker = "https://github.com/anirudhgunda/media-quality-check/issues"
+Documentation = "https://github.com/anirudhgunda/media-quality-check#readme"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "build"]
+build-backend = "setuptools.build_meta"
