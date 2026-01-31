@@ -1,6 +1,6 @@
 [project]
 name = "media-quality-check"
-version = "1.0.2"
+version = "1.1.0"
 description = "Advanced media quality analyzer using ffprobe"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,3 +28,6 @@ Documentation = "https://github.com/anirudhgunda/media-quality-check#readme"
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "build"]
 build-backend = "setuptools.build_meta"
+
+[project.scripts]
+media-quality-check = "media_quality_check.cli:main"
