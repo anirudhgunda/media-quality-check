@@ -157,18 +157,21 @@ def analyze_file(file):
 
     total = video_score + best_audio_score
 
-    if video_score == 6 and best_audio_score >= 6:
-        verdict = "REFERENCE QUALITY"
-
+    # Improved verdict logic
+    if video_score == 6:
+        if best_audio_score >= 6:
+            verdict = "REFERENCE QUALITY"
+        else:
+            verdict = "EXCELLENT"
     elif video_score == 5 and best_audio_score >= 5:
         verdict = "EXCELLENT"
-
-    elif video_score == 4 and best_audio_score >= 6:
-        verdict = "EXCELLENT"
-
-    elif video_score == 4 and best_audio_score >= 4:
-        verdict = "GOOD"
-
+    elif video_score == 4:
+        if best_audio_score in [4, 5]:
+            verdict = "GOOD"
+        elif best_audio_score >= 6:
+            verdict = "EXCELLENT"
+        else:
+            verdict = "MEDIUM"
     else:
         verdict = "MEDIUM"
 
