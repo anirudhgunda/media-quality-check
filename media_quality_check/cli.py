@@ -5,8 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-FILE_VIDEO_SCORE = {}
-FILE_AUDIO_SCORE = {}
+FILE_MEDIA_SCORE = {}
 
 
 def run_ffprobe(file):
@@ -30,17 +29,100 @@ def detect_dolby_vision(video_stream):
         sdt = (sd.get("side_data_type") or "").lower()
         if "dovi" in sdt or "dolby vision" in sdt:
             return True
-
     tag = (video_stream.get("codec_tag_string") or "").lower()
-    if tag in ("dvh1", "dvhe"):
-        return True
+    return tag in ("dvh1", "dvhe")
 
-    return False
+
+def compute_video_score(v, fmt, is_hdr, is_dv):
+    width = v.get("width", 0)
+    height = v.get("height", 0)
+    pixels = width * height
+    mp = pixels / 1_000_000 if pixels else 0.01
+
+    size = float(fmt.get("size", 0))
+    duration = float(fmt.get("duration", 1))
+    bitrate_mbps = (size * 8) / duration / 1_000_000
+
+    # Base score
+    score = 0.0
+    verdict = "MEDIUM"
+
+    if width >= 3840:  # 4K
+        if is_dv or is_hdr:
+            if bitrate_mbps >= 15:
+                score = 5.0
+                verdict = "REFERENCE QUALITY"
+            else:
+                score = 4.5
+                verdict = "EXCELLENT"
+        else:  # 4K SDR
+            if bitrate_mbps >= 20:
+                score = 4.5
+                verdict = "EXCELLENT"
+            else:
+                score = 4.0
+                verdict = "GOOD"
+    elif width >= 1920:  # 1080p
+        if bitrate_mbps >= 25:
+            score = 4.5
+            verdict = "EXCELLENT"
+        elif is_dv or is_hdr:
+            score = 4.5
+            verdict = "EXCELLENT"
+        else:
+            score = 4.0
+            verdict = "GOOD"
+    elif width >= 1280:  # 720p
+        if bitrate_mbps >= 10:
+            score = 3.5
+            verdict = "GOOD"
+        else:
+            score = 3.0
+            verdict = "MEDIUM"
+    else:  # lower resolutions
+        score = 2.0
+        verdict = "MEDIUM"
+
+    return score, bitrate_mbps, verdict
+
+
+def compute_audio_score(streams):
+    best = 0.0
+    for a in streams:
+        if a.get("codec_type") != "audio":
+            continue
+
+        codec = a.get("codec_name", "")
+        ch = a.get("channels", 0)
+        profile = (a.get("profile") or "").lower()
+
+        lossless = codec == "truehd" or (codec.startswith("dts") and "hd" in profile)
+        atmos = "atmos" in profile
+
+        base = {
+            "truehd": 5.0,
+            "dts": 4.5,
+            "eac3": 3.5,
+            "ac3": 3.0,
+            "aac": 2.0
+        }.get(codec.split("_")[0], 0)
+
+        bonus = 0
+        if atmos:
+            bonus += 0.5
+        if ch >= 8:
+            bonus += 0.5
+        elif ch >= 6:
+            bonus += 0.3
+
+        score = min(base + bonus, 5.0)
+        best = max(best, score)
+
+    return best
 
 
 def analyze_file(file):
     file = Path(file)
-
     if not file.exists():
         print(f"File not found: {file}")
         return
@@ -53,9 +135,6 @@ def analyze_file(file):
     streams = data.get("streams", [])
     fmt = data.get("format", {})
 
-    # ====================
-    # VIDEO
-    # ====================
     video_streams = [
         s for s in streams
         if s.get("codec_type") == "video"
@@ -63,10 +142,8 @@ def analyze_file(file):
     ]
 
     print("🎥 Video Streams:")
-
     is_hdr = False
     is_dv = False
-
     for v in video_streams:
         pix_fmt = v.get("pix_fmt", "")
         transfer = v.get("color_transfer", "")
@@ -83,123 +160,36 @@ def analyze_file(file):
         else:
             hdr_label = "SDR"
 
+        size = float(fmt.get("size", 0))
+        duration = float(fmt.get("duration", 1))
+        vbps = (size * 8) / duration / 1_000_000
+
         print(
-            f"  ▸ [V:{v.get('index')}] "
-            f"{v.get('codec_name')} | "
-            f"{v.get('width')}x{v.get('height')} | "
-            f"{bitdepth} | {hdr_label}"
+            f"  ▸ {v.get('codec_name')} | {v.get('width')}x{v.get('height')} | "
+            f"{bitdepth} | {hdr_label} | {vbps:.2f} Mbps"
         )
 
-    best_video = max(video_streams, key=lambda x: x.get("width", 0), default={})
+    best_video = max(video_streams, key=lambda x: x.get("width", 0))
+    video_score, vbps, video_verdict = compute_video_score(best_video, fmt, is_hdr, is_dv)
 
-    width = best_video.get("width", 0)
-    pix_fmt = best_video.get("pix_fmt", "")
-    bitdepth = "10-bit" if "10" in pix_fmt else "8-bit"
-
-    size = float(fmt.get("size", 0))
-    duration = float(fmt.get("duration", 1))
-    vbps = (size * 8) / duration / 1_000_000
-
-    # --------------------
-    # Video scoring
-    # --------------------
-    video_score = 0
-
-    if width >= 3840:  # 4K
-        if is_hdr or is_dv:
-            video_score = 6
-        else:  # 4K SDR
-            video_score = 5
-    elif width >= 1920:  # 1080p
-        if vbps >= 25:
-            video_score = 5
-        elif is_hdr or is_dv:
-            video_score = 5
-        else:
-            video_score = 4
-    elif width >= 1280:  # 720p
-        video_score = 3
-    else:  # anything lower
-        video_score = 2
-
-    print(f"\n📊 Video Score: {video_score} / 6 ({vbps:.2f} Mbps)")
-
-    # ====================
-    # AUDIO
-    # ====================
     print("\n🔊 Audio Streams:")
-
-    best_audio_score = 0
-    audio_priority_score = 0
-
     for a in [s for s in streams if s.get("codec_type") == "audio"]:
         codec = a.get("codec_name", "")
         ch = a.get("channels", 0)
         lang = a.get("tags", {}).get("language", "und")
-        profile = (a.get("profile") or "").lower()
+        raw_br = a.get("bit_rate") or a.get("tags", {}).get("BPS")
+        br = f"{int(int(raw_br)/1000)} kbps" if raw_br else "NA"
+        print(f"  ▸ {codec} | {ch}ch | {br} | LANG: {lang}")
 
-        if codec.startswith("dts") and lang == "und":
-            lang = "tel"
+    audio_score = compute_audio_score(streams)
 
-        lossless = codec == "truehd" or (codec.startswith("dts") and "hd" in profile)
-        atmos = "atmos" in profile
+    # Weighted media score
+    media_score = round(min(video_score * 0.7 + audio_score * 0.3, 5.0), 2)
+    FILE_MEDIA_SCORE[str(file)] = (media_score, vbps)
 
-        if lossless:
-            br = "LOSSLESS"
-        else:
-            raw_br = a.get("bit_rate") or a.get("tags", {}).get("BPS")
-            br = f"{int(int(raw_br) / 1000)} kbps" if raw_br else "NA"
-
-        base = {
-            "truehd": 6,
-            "dts": 5,
-            "eac3": 4,
-            "ac3": 3,
-            "aac": 3
-        }.get(codec.split("_")[0], 0)
-
-        bonus = 0
-        bonus += 2 if atmos else 0
-        bonus += 1 if lang == "tel" else 0
-        if ch >= 8:
-            bonus += 2
-        elif ch >= 6:
-            bonus += 1
-
-        score = min(base + bonus, 7)
-
-        print(
-            f"  ▸ {codec} | {ch}ch | {br} | LANG: {lang}"
-            f"{' | Atmos' if atmos else ''}"
-        )
-
-        if score > best_audio_score:
-            best_audio_score = score
-            audio_priority_score = base * 10 + bonus
-
-    print(f"\n🎧 Audio Score: {best_audio_score} / 7")
-
-    # ====================
-    # VERDICT
-    # ====================
-    if video_score == 6:
-        verdict = "REFERENCE QUALITY" if best_audio_score >= 6 else "EXCELLENT"
-    elif video_score == 5 and best_audio_score >= 5:
-        verdict = "EXCELLENT"
-    elif video_score == 4:
-        verdict = "GOOD" if best_audio_score >= 4 else "MEDIUM"
-    else:
-        verdict = "MEDIUM"
-
-    # 🔒 HARD GATE: SDR CANNOT BE REFERENCE
-    if verdict == "REFERENCE QUALITY" and not is_hdr:
-        verdict = "EXCELLENT"
-
-    print(f"\n🏁 Verdict: {verdict}")
+    print(f"\n📊 Media Score: {media_score} / 5.0")
+    print(f"\n🏁 Verdict: {video_verdict}")
     print_separator()
-
-    FILE_VIDEO_SCORE[str(file)] = video_score
-    FILE_AUDIO_SCORE[str(file)] = audio_priority_score
 
 
 def main():
@@ -211,15 +201,11 @@ def main():
         analyze_file(f)
 
     if len(sys.argv) > 2:
-        best_file = ""
-        best_score = 0
-
-        for f in sys.argv[1:]:
-            score = FILE_VIDEO_SCORE[f] * 10 + FILE_AUDIO_SCORE[f]
-            if score > best_score:
-                best_score = score
-                best_file = f
-
+        # Pick file with highest media score, tiebreak with highest video bitrate
+        best_file = max(
+            FILE_MEDIA_SCORE.items(),
+            key=lambda x: (x[1][0], x[1][1])
+        )[0]
         display = best_file if len(best_file) <= 100 else "..." + best_file[-97:]
         print(f"✅ Preferred File: {display}")
         print_separator()
