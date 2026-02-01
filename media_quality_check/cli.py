@@ -105,19 +105,22 @@ def analyze_file(file):
     # --------------------
     video_score = 0
 
-    if width >= 3840 and (bitdepth == "10-bit" or is_dv):
-        video_score = 6 if vbps >= 12 else 5
-    elif width >= 3840:
-        video_score = 5 if vbps >= 12 else 4
-    elif width >= 1920:
+    if width >= 3840:  # 4K
+        if is_hdr or is_dv:
+            video_score = 6
+        else:  # 4K SDR
+            video_score = 5
+    elif width >= 1920:  # 1080p
         if vbps >= 25:
             video_score = 5
-        elif vbps >= 15:
-            video_score = 4
+        elif is_hdr or is_dv:
+            video_score = 5
         else:
-            video_score = 3
-    else:
-        video_score = 1
+            video_score = 4
+    elif width >= 1280:  # 720p
+        video_score = 3
+    else:  # anything lower
+        video_score = 2
 
     print(f"\n📊 Video Score: {video_score} / 6 ({vbps:.2f} Mbps)")
 
