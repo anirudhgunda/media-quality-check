@@ -1,6 +1,6 @@
 [project]
 name = "media-quality-check"
-version = "1.1.0"
+version = "1.1.1"
 description = "Advanced media quality analyzer using ffprobe"
 readme = "README.md"
 requires-python = ">=3.9"
